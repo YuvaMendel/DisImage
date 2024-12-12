@@ -67,7 +67,7 @@ def recv_message(sock : socket.socket) -> tuple[bytes, bytes]:
 
 def connect(dest_addr : str, dest_port : int, client_quarter : int) -> socket.socket:
     """
-        Socket connect to destination
+        Client Socket connect to destination
         Sends Client ID
     """
     
@@ -89,6 +89,51 @@ def connect(dest_addr : str, dest_port : int, client_quarter : int) -> socket.so
         sock = None
     
     return sock
+
+
+def recv_client(sock : socket.socket, empty_quartes : list[int]) -> socket.socket:
+    """
+        Server Receives new client
+    """
+    
+    return_code = SERVER_REJECT
+    
+    # Accept new client
+    client_socket, _ = sock.accept()
+    msg_type, msg_data = recv_message(client_socket)
+    
+    if msg_type == CLIENT_ID:
+        msg_data = int(msg_data.decode())
+        
+        # Check if client quarter is not already used
+        if msg_data in empty_quartes:
+            empty_quartes.remove(msg_data)
+            return_code = SERVER_ACK
+        
+    
+    send_message(client_socket, (return_code, b""))
+    
+    # If data was not valid close socket
+    if return_code == SERVER_REJECT:
+        client_socket.close()
+        client_socket = None
+    
+    # Return client socket
+    return client_socket
+
+
+def create_server(addr : str, port : int) -> socket.socket:
+    """
+        Creates server socket
+    """
+    
+    sock = socket.socket()
+    sock.bind((addr, port))
+    sock.listen(4)
+    
+    return sock
+    
+    
 
 """
     TCP by size
