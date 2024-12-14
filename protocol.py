@@ -51,7 +51,7 @@ def send_message(sock : socket.socket, msg : tuple[bytes, bytes]) -> None:
     """
     
     msg = construct_message_send(*msg)
-    send_with_size(sock, msg)
+    __send_with_size(sock, msg)
 
 
 def recv_message(sock : socket.socket) -> tuple[bytes, bytes]:
@@ -60,7 +60,8 @@ def recv_message(sock : socket.socket) -> tuple[bytes, bytes]:
     """
 
     msg = __recv_by_size(sock)
-    msg = deconstruct_message_recv(msg)
+    if msg:
+        msg = deconstruct_message_recv(msg)
     
     return msg
 
@@ -91,12 +92,14 @@ def connect(dest_addr : str, dest_port : int, client_quarter : int) -> socket.so
     return sock
 
 
-def recv_client(sock : socket.socket, empty_quartes : list[int]) -> socket.socket:
+def recv_client(sock : socket.socket, empty_quartes : list[int]) -> tuple[socket.socket, int]:
     """
-        Server Receives new client
+        Server Receives new client.
+        Returns a client object -> tuple made of the socket and the image quarter
     """
     
     return_code = SERVER_REJECT
+    return_quarter = 0
     
     # Accept new client
     client_socket, _ = sock.accept()
@@ -107,8 +110,10 @@ def recv_client(sock : socket.socket, empty_quartes : list[int]) -> socket.socke
         
         # Check if client quarter is not already used
         if msg_data in empty_quartes:
-            empty_quartes.remove(msg_data)
             return_code = SERVER_ACK
+            return_quarter = msg_data
+
+            empty_quartes.remove(msg_data)
         
     
     send_message(client_socket, (return_code, b""))
@@ -119,8 +124,18 @@ def recv_client(sock : socket.socket, empty_quartes : list[int]) -> socket.socke
         client_socket = None
     
     # Return client socket
-    return client_socket
+    return client_socket, return_quarter
 
+
+def remove_client(client_object : tuple[socket.socket, int], empty_quarters : list[int]) -> None:
+    """
+        Closes client socket and removes from avaliable quarters
+    """
+
+    client_socket, client_quarter = client_object
+
+    empty_quarters.append(client_quarter)
+    close(client_socket)
 
 def create_server(addr : str, port : int) -> socket.socket:
     """
@@ -132,6 +147,13 @@ def create_server(addr : str, port : int) -> socket.socket:
     sock.listen(4)
     
     return sock
+
+def close(sock : socket.socket) -> None:
+    """
+        Closes a socket
+    """
+
+    sock.close()
     
     
 
@@ -163,28 +185,22 @@ def __recv_amount(sock, size=4):
 
 
 def __recv_by_size(sock, return_type="bytes"):
-    try:
-        data = b''
-        data_len = int(__recv_amount(sock, MSG_LEN_LEN))
-        # code handle the case of data_len 0
-        data = __recv_amount(sock, data_len)
-        __log("Receive", data)
-        if return_type == "string":
-            return data.decode()
-    except:
-        data = '' if return_type == "string" else b''
+    data = b''
+    data_len = int(__recv_amount(sock, MSG_LEN_LEN))
+    # code handle the case of data_len 0
+    data = __recv_amount(sock, data_len)
+    __log("Receive", data)
+    if return_type == "string":
+        return data.decode()
     return data
 
 
 def __send_with_size(sock, data):
     if len(data) == 0:
         return
-    try:
-        if type(data) != bytes:
-            data = data.encode()
-        len_data = str(len(data)).zfill(MSG_LEN_LEN).encode()
-        data = len_data + data
-        sock.sendall(data)
-        __log("Sent", data)
-    except OSError:
-        print('ERROR: send_with_size with except OSError')
+    if type(data) != bytes:
+        data = data.encode()
+    len_data = str(len(data)).zfill(MSG_LEN_LEN).encode()
+    data = len_data + data
+    sock.sendall(data)
+    __log("Sent", data)
