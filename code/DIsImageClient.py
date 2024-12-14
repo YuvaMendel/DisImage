@@ -36,10 +36,6 @@ class Image:
             pass
         elif self.quarter == 4:
             pass
-    
-
-
-
 
 
 def main():
@@ -62,9 +58,6 @@ def main():
 
     #generate client image
     client_image = Image(client_image_quarter)
-
-    
-
 
     
 
