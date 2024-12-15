@@ -114,7 +114,7 @@ def recv_chunks() -> None:
 
                 # If got an exception close the connection and erase clear the quarter
                 with lock:
-                    protocol.remove_client(client_object)
+                    protocol.remove_client(client_object, empty_quarters)
                 
                 print(f">>>Client chunk {client_object[1]} has disconnected>>>")
         
