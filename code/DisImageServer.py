@@ -1,5 +1,5 @@
 #Distributed Image Server - Omer Kfir, Yuval Mendel
-import pygame, threading, protocol
+import pygame, threading, pickle, protocol
 import numpy as np
 
 client_objects = []
@@ -11,18 +11,22 @@ PORT = 12345
 lock = threading.Lock()
 task_running = True
 
+SCALE = 4
+
 # Screen dimensions
 CUBE_SIZE = 50 
-SCREEN_WIDTH = CUBE_SIZE * 8
-SCREEN_HEIGHT = CUBE_SIZE * 8
+SCREEN_WIDTH = CUBE_SIZE * (SCALE ** 2)
+SCREEN_HEIGHT = CUBE_SIZE * (SCALE ** 2)
 
-SCALE = 4
 BLACK = (0, 0, 0)
 
-FPS = 20
-SPEED = 2
+FPS = 34
+SPEED = 7
 
-constructed_image = np.full((50, 50, 3), (255, 255, 255), dtype=np.uint8)
+constructed_image = np.full((50, 50, 3), (0, 0, 0), dtype=np.uint8)
+
+x = (SCREEN_WIDTH - CUBE_SIZE * SCALE) // 2
+y = (SCREEN_HEIGHT - CUBE_SIZE * SCALE) // 2
 
 def initialize_screen():
     """
@@ -98,14 +102,18 @@ def recv_chunks() -> None:
         for client_object in client_objects:
             try:
                 client_socket, client_quarter = client_object
+                
                 # Server requests an image chunk
-                protocol.send_message(client_socket, (protocol.IMAGE_CHUNK_RECV, b""))
+                protocol.send_message(client_socket, (protocol.IMAGE_CHUNK_RECV, f"{str(x)}~{str(y)}".encode()))
 
                 # Server receives an image chunk
                 msg_type, image_chunk = protocol.recv_message(client_socket)
                 if msg_type == protocol.CLIENT_DISCONNECT:
                     raise Exception
 
+                #  Numpy object transfarred using pickle
+                image_chunk = pickle.loads(image_chunk)
+                
                 chunk_height, chunk_width = image_chunk.shape
                 h, w = calc_chunk_index(client_quarter, chunk_height, chunk_width)
             
@@ -114,7 +122,7 @@ def recv_chunks() -> None:
 
                 # If got an exception close the connection and erase clear the quarter
                 with lock:
-                    protocol.remove_client(client_object, empty_quarters)
+                    protocol.remove_client(client_object, empty_quartes)
                 
                 print(f">>>Client chunk {client_object[1]} has disconnected>>>")
         
@@ -136,7 +144,7 @@ def recv_clients() -> None:
     while task_running:
         client_object = protocol.recv_client(server_socket, empty_quartes)
 
-        if not client_socket:
+        if client_object is not None:
 
             # Clients can also disconnect and so list client_objects can be changed
             # From other functions, so a lock is needed
@@ -159,15 +167,16 @@ def recv_clients() -> None:
 
 def main():
 
-    global task_running
+    global task_running, x, y
 
     # Create thread which receives clients and a thread which receives the image chunks
-    #clients_recv_thread = threading.Thread(target=recv_clients, args=())
-    #chunks_recv_thread = threading.Thread(target=recv_chunks, args=()) 
+    clients_recv_thread = threading.Thread(target=recv_clients, args=())
+    chunks_recv_thread = threading.Thread(target=recv_chunks, args=()) 
+    
+    clients_recv_thread.start()
+    chunks_recv_thread.start()
 
     screen = initialize_screen()
-    x = (SCREEN_WIDTH - CUBE_SIZE) // 2
-    y = (SCREEN_HEIGHT - CUBE_SIZE) // 2
     clock = pygame.time.Clock()
 
     while task_running:
@@ -194,8 +203,8 @@ def main():
     pygame.quit()
 
     # Close threads
-    #chunks_recv_thread.join()
-    #clients_recv_thread.join()
+    chunks_recv_thread.join()
+    clients_recv_thread.join()
     print(">>>Closed all threads>>>")
 
 if __name__ == "__main__":

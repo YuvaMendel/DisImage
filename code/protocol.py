@@ -39,8 +39,8 @@ def deconstruct_message_recv(msg_recv : bytes) -> tuple[bytes, bytes]:
         By protocol rules
     """
     
-    msg_type = msg_recv[MSG_LEN_LEN:MSG_LEN_LEN + MSG_TYPE_LEN]
-    msg_data = msg_recv[MSG_LEN_LEN + MSG_TYPE_LEN:]
+    msg_type = msg_recv[:MSG_TYPE_LEN]
+    msg_data = msg_recv[MSG_TYPE_LEN:]
     
     return msg_type,msg_data
 
