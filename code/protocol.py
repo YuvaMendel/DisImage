@@ -20,7 +20,9 @@ MSG_DATA_INDEX = 1
 MSG_TYPE_LEN = 3
 MSG_LEN_LEN = 8
 
-DEBUG_FLAG = True
+SOCKET_TIMEOUT = 0.1
+
+DEBUG_FLAG = False
 
 def construct_message_send(msg_type : bytes, msg_data : bytes) -> bytes:
     """
@@ -145,6 +147,7 @@ def create_server(addr : str, port : int) -> socket.socket:
     sock = socket.socket()
     sock.bind((addr, port))
     sock.listen(4)
+    sock.settimeout(SOCKET_TIMEOUT)
     
     return sock
 

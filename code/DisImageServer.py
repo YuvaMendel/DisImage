@@ -20,8 +20,8 @@ SCREEN_HEIGHT = CUBE_SIZE * (SCALE ** 2)
 
 BLACK = (0, 0, 0)
 
-FPS = 34
-SPEED = 7
+FPS = 35
+SPEED = SCALE
 
 constructed_image = np.full((50, 50, 3), (0, 0, 0), dtype=np.uint8)
 
@@ -104,7 +104,7 @@ def recv_chunks() -> None:
                 client_socket, client_quarter = client_object
                 
                 # Server requests an image chunk
-                protocol.send_message(client_socket, (protocol.IMAGE_CHUNK_RECV, f"{str(x)}~{str(y)}".encode()))
+                protocol.send_message(client_socket, (protocol.IMAGE_CHUNK_RECV, f"{str(x // SCALE)}~{str(y // SCALE)}".encode()))
 
                 # Server receives an image chunk
                 msg_type, image_chunk = protocol.recv_message(client_socket)
@@ -114,20 +114,24 @@ def recv_chunks() -> None:
                 #  Numpy object transfarred using pickle
                 image_chunk = pickle.loads(image_chunk)
                 
-                chunk_height, chunk_width = image_chunk.shape
+                chunk_height, chunk_width, _ = image_chunk.shape
                 h, w = calc_chunk_index(client_quarter, chunk_height, chunk_width)
             
                 temp_image[h:h + chunk_height, w:w+chunk_width] = image_chunk
-            except:
+
+            except Exception as error:
 
                 # If got an exception close the connection and erase clear the quarter
                 with lock:
                     protocol.remove_client(client_object, empty_quartes)
                 
+                client_objects.remove(client_object)
+                print(error)
                 print(f">>>Client chunk {client_object[1]} has disconnected>>>")
         
         # Update global image
         constructed_image = temp_image
+    
 
 
 def recv_clients() -> None:
@@ -142,19 +146,23 @@ def recv_clients() -> None:
 
     # Receive Clients
     while task_running:
-        client_object = protocol.recv_client(server_socket, empty_quartes)
+        try:
+            client_object = protocol.recv_client(server_socket, empty_quartes)
 
-        if client_object is not None:
+            if client_object[0] is not None:
 
-            # Clients can also disconnect and so list client_objects can be changed
-            # From other functions, so a lock is needed
+                # Clients can also disconnect and so list client_objects can be changed
+                # From other functions, so a lock is needed
 
-            with lock:
-                client_objects.append(client_object)
-            print(f">>>Received new client, chunk {client_object[1]}>>>")
+                with lock:
+                    client_objects.append(client_object)
+                print(f">>>Received new client, chunk {client_object[1]}>>>")
 
-        else:
-            print(f">>>Rejected client, chunk {client_object[1]} is already taken>>>")
+            else:
+                print(f">>>Rejected client, chunk {client_object[1]} is already taken>>>")
+        
+        except: # Timeout excpetion
+            pass
     
     # Close sockets
     for client_socket, _ in client_objects:
@@ -206,6 +214,7 @@ def main():
     chunks_recv_thread.join()
     clients_recv_thread.join()
     print(">>>Closed all threads>>>")
+    print(">>>BLOCKED BY OPHIR SHAVIT!!!!!>>>")
 
 if __name__ == "__main__":
     main()
