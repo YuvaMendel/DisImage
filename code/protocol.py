@@ -1,209 +1,331 @@
-#Distributed Image Protocol - Omer Kfir, Yuval Mendel
+#   'Silent net' project protocol
+#   
+#       Contains main message types and 
+#       Socket handling
+#
+#   Omer Kfir (C)
+
 import socket
+from typing import Optional, Tuple, Union
 
-# Messages types -> Client to server
-IMAGE_CHUNK_SEND = b"IMS"
-CLIENT_DISCONNECT = b"CLD"
-
-CLIENT_ID = b"CCI"
-
-# Server to Client
-IMAGE_CHUNK_RECV = b"IMR"
-SERVER_DISCONNECT = b"SLD"
-
-SERVER_ACK = b"ACK"
-SERVER_REJECT = b"REJ"
-
-MSG_TYPE_INDEX = 0
-MSG_DATA_INDEX = 1
-
-MSG_TYPE_LEN = 3
-MSG_LEN_LEN = 8
-
-SOCKET_TIMEOUT = 0.1
-
+DEBUG_PRINT_LEN = 50
 DEBUG_FLAG = False
 
-def construct_message_send(msg_type : bytes, msg_data : bytes) -> bytes:
-    """
-        Builds message to send
-        by protocol rules
-    """
-    msg_to_send = msg_type
-    msg_to_send += msg_data
+class MessageParser:
+    PROTOCOL_SEPARATOR = b"\x1f"
+
+    # Message types
+    MSG_PROCESS_OPEN = "MPO"
+    MSG_PROCESS_CLOSE = "MPC"
     
-    return msg_to_send
-
-
-def deconstruct_message_recv(msg_recv : bytes) -> tuple[bytes, bytes]:
     """
-        Deconstruct message received
-        By protocol rules
+        Decorator staticmethod does not block a function to be called through an instance
+        Rather it ensures that simply not pass a self object to the function even if function called through instance
     """
     
-    msg_type = msg_recv[:MSG_TYPE_LEN]
-    msg_data = msg_recv[MSG_TYPE_LEN:]
+    @staticmethod
+    def encode_str(msg : Union[bytes, str]) -> bytes:
+        """ Encodes a message """
     
-    return msg_type,msg_data
-
-
-def send_message(sock : socket.socket, msg : tuple[bytes, bytes]) -> None:
-    """
-        Send constructed message
-    """
-    
-    msg = construct_message_send(*msg)
-    __send_with_size(sock, msg)
-
-
-def recv_message(sock : socket.socket) -> tuple[bytes, bytes]:
-    """
-        Recv constructed message
-    """
-
-    msg = __recv_by_size(sock)
-    if msg:
-        msg = deconstruct_message_recv(msg)
-    
-    return msg
-
-
-def connect(dest_addr : str, dest_port : int, client_quarter : int) -> socket.socket:
-    """
-        Client Socket connect to destination
-        Sends Client ID
-    """
-    
-    sock = socket.socket()
-    sock.connect((dest_addr, dest_port))
-    
-    # Send ID of client to the server
-    client_quarter = str(client_quarter).encode()
-    send_message(sock, (CLIENT_ID, client_quarter))
-    
-    server_ans = recv_message(sock)[MSG_TYPE_INDEX]
-    if server_ans == SERVER_ACK:
-        print(f"Client Connect to {dest_addr}:{dest_port}, quarter - {client_quarter}")
-    
-    else:
-        print("BLOCKED BY JAMES!!!!!!!☹")
+        if type(msg) == str:
+            msg = msg.encode()
         
-        sock.close()
-        sock = None
+        return msg
     
-    return sock
-
-
-def recv_client(sock : socket.socket, empty_quartes : list[int]) -> tuple[socket.socket, int]:
-    """
-        Server Receives new client.
-        Returns a client object -> tuple made of the socket and the image quarter
-    """
-    
-    return_code = SERVER_REJECT
-    return_quarter = 0
-    
-    # Accept new client
-    client_socket, _ = sock.accept()
-    msg_type, msg_data = recv_message(client_socket)
-    
-    if msg_type == CLIENT_ID:
-        msg_data = int(msg_data.decode())
+    @staticmethod
+    def protocol_message_construct(msg_type : str, *args):
+        """
+            Constructs a message to be sent by protocol rules
+            
+            INPUT: msg_type, *args (Uknown amount of arguments)
+            OUTPUT: None
+            
+            @msg_type -> Message type of the message to be sent
+            @args -> The rest of the data to be sent in the message
+        """
         
-        # Check if client quarter is not already used
-        if msg_data in empty_quartes:
-            return_code = SERVER_ACK
-            return_quarter = msg_data
+        msg_buf = MessageParser.encode_str(msg_type)
+        
+        for argument in args:
+            msg_buf += PROTOCOL_SEPARATOR + encode_str(argument)
+        
+        return msg_buf
+        
+    @staticmethod
+    def protocol_message_deconstruct(msg : bytes) -> list[bytes]:
+        """
+            Constructs a message to be sent by protocol rules
+            
+            INPUT: msg
+            OUTPUT: List of fields in msg seperated by protocol
+            
+            @msg -> Byte stream
+        """
+        
+        return msg.split(PROTOCOL_SEPARATOR)
+        
 
-            empty_quartes.remove(msg_data)
+class TCPsocket:
+    MSG_LEN_LEN = 4
+
+    def __init__(self, sock: Optional[socket.socket] = None):
+        """
+            Create TCP socket
+            
+            INPUT: sock (not necessary)
+            OUTPUT: None
+            
+            @sock -> Socket object (socket.socket)
+        """
+        
+        if sock is None:
+            self.__sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        
+        else:
+            self.__sock = sock
+            
+    
+    def create_server_socket(self, bind_ip : str, bind_port : int, server_listen : int) -> None:
+        """
+            Prepare a server tcp socket
+            
+            INPUT: bind_ip, bind_port, server_listen
+            OUTPUT: None
+            
+            @bind_ip -> IP for server to bind
+            @bind_port -> Port for server to bind
+            @server_listen -> Max amount of client connecting at the same time
+        """
+        
+        self.__sock.bind((bind_ip, bind_port))
+        self.__sock.listen(server_listen)
+    
+    def server_socket_recv_client(self) -> socket.socket:
+        """
+            Server receives new client
+            
+            INPUT: None
+            OUTPUT: None
+            
+            @dst_ip -> Destination IP of server
+            @dst_port -> Destination Port of server
+        """
+        
+        client__sock, _ = self.__sock.accept()
+        return client__sock
         
     
-    send_message(client_socket, (return_code, b""))
+    def client_socket_connect_server(self, dst_ip : str, dst_port : int) -> None:
+        """
+            Connect client socket to server
+            
+            INPUT: dst_ip, dst_port
+            OUTPUT: None
+            
+            @dst_ip -> Destination IP of server
+            @dst_port -> Destination Port of server
+        """
+        
+        self.__sock.connect((dst_ip, dst_port))
     
-    # If data was not valid close socket
-    if return_code == SERVER_REJECT:
-        client_socket.close()
-        client_socket = None
+    def close(self):
+        """
+            Closes socket
+            
+            INPUT: None
+            OUTPUT: None
+        """
+        
+        self.__sock.close()
+
+    def __log(self, prefix : str, data: Union[bytes, str], max_to_print: int=DEBUG_PRINT_LEN) -> None:
+        """
+            Prints 'max_to_print' amount of data from 'data'
+            
+            INPUT: prefix, data, max_to_print
+            OUTPUT: None
+            
+            @prefix -> A prefix for every data to be printed
+            @data -> Stream of data (Bytes | string)
+            @max_to_print -> Amount of data to printed
+        """
+        
+        if not DEBUG_FLAG:
+            return
+        
+        data_to_log = data[:max_to_print]
+        if type(data_to_log) == bytes:
+            try:
+                data_to_log = data_to_log.decode()
+                
+            except (UnicodeDecodeError, AttributeError):
+                pass
+        print(f"\n{prefix}({len(data)})>>>{data_to_log}")
+
+
+    def __recv_amount(self, size : int) -> bytes:
+        """
+            Recevies specified amount of data from connected side
+            
+            INPUT: None
+            OUTPUT: Byte stream
+            
+            @data -> Stream of bytes
+        """
+        
+        buffer = b''
+        
+        # Recv until 'size' amount of bytes is received
+        while size:
+        
+            tmp_buf = self.__sock.recv(size)
+            
+            if not tmp_buf:
+                return b''
+            
+            buffer += tmp_buf
+            size -= len(tmp_buf)
+        
+        return buffer
+
+
+    def recv(self) -> bytes:
+        """
+            Recevies data from connected side
+            
+            INPUT: None
+            OUTPUT: Byte stream
+            
+            @data -> Stream of bytes
+        """
+        
+        data = b''
+        data_len = self.__recv_amount(self.MSG_LEN_LEN) #  Recv length of message
+
+        if data_len == b'':
+            return
+        data_len = int(data_len)
+
+        # Recv actual message and log it
+        data = self.__recv_amount(data_len)
+        self.__log("Receive", data)
+        
+        return data
+
+
+    def send(self, data : Union[bytes, str]):
+        """
+            Sends data to connected side
+            
+            INPUT: data
+            OUTPUT: None
+            
+            @data -> Stream of bytes (can also be a simple string)
+        """
+        
+        length = len(data)
+        
+        if length == 0:
+            return
+            
+        if type(data) != bytes:
+            data = data.encode()
+        
+        # Pad data with its length
+        len_data = str(length).zfill(self.MSG_LEN_LEN).encode()
+        data = len_data + data
+        
+        # Send data and log it
+        self.__sock.sendall(data)
+        self.__log("Sent", data)
     
-    # Return client socket
-    return client_socket, return_quarter
-
-
-def remove_client(client_object : tuple[socket.socket, int], empty_quarters : list[int]) -> None:
-    """
-        Closes client socket and removes from avaliable quarters
-    """
-
-    client_socket, client_quarter = client_object
-
-    empty_quarters.append(client_quarter)
-    close(client_socket)
-
-def create_server(addr : str, port : int) -> socket.socket:
-    """
-        Creates server socket
-    """
-    
-    sock = socket.socket()
-    sock.bind((addr, port))
-    sock.listen(4)
-    sock.settimeout(SOCKET_TIMEOUT)
-    
-    return sock
-
-def close(sock : socket.socket) -> None:
-    """
-        Closes a socket
-    """
-
-    sock.close()
-    
     
 
-"""
-    TCP by size
-"""
-
-def __log(prefix, data, max_to_print=100):
-    if not DEBUG_FLAG:
-        return
-    data_to_log = data[:max_to_print]
-    if type(data_to_log) == bytes:
+class client (TCPsocket):
+    
+    def __init__(self, sock: Optional[socket.socket] = None):
+        """
+            Create the client side socket
+            socket type: TCP
+            
+            INPUT: sock (not necessary)
+            OUTPUT: None
+            
+            @sock -> Socket object (socket.socket)
+        """
+        
+        super().__init__(sock)
+    
+    def connect(self, dst_ip : str, dst_port : int) -> None:
+        """
+            Connect client to server
+            
+            INPUT: dst_ip, dst_port
+            OUTPUT: None
+            
+            @dst_ip -> Destination IP of server
+            @dst_port -> Destination Port of server
+        """
+        
         try:
-            data_to_log = data_to_log.decode()
-        except (UnicodeDecodeError, AttributeError):
-            pass
-    print(f"\n{prefix}({len(data)})>>>{data_to_log}")
+            self.client_socket_connect_server(dst_ip, dst_port)
+        
+        except (ConnectionRefusedError, socket.timeout):
+            self.__log("Error", "Failed to connect to server")
+            self.close()
+    
+    def protocol_recv(self) -> list[bytes]:
+        """
+            Recevies data from connected side and splits it by protocol
+            
+            INPUT: None
+            OUTPUT: List of byte streams
+        """
+        
+        data = MessageParser.protocol_message_deconstruct(self.recv())
+        return data
+        
+    def protocol_send(self, msg_type, *args) -> None:
+        """
+            Sends a message constructed by protocll
+            
+            INPUT: msg_type, *args (Uknown amount of arguments)
+            OUTPUT: None
+            
+            @msg_type -> Message type of the message to be sent
+            @args -> The rest of the data to be sent in the message
+        """
+        
+        constr_msg = MessageParser.protocol_message_construct(msg_type, args)
+        self.send(constr_msg)
 
+class server (TCPsocket):
+    SERVER_BIND_IP   = "0.0.0.0"
+    SERVER_BIND_PORT = 6734
 
-def __recv_amount(sock, size=4):
-    buffer = b''
-    while size:
-        new_bufffer = sock.recv(size)
-        if not new_bufffer:
-            return b''
-        buffer += new_bufffer
-        size -= len(new_bufffer)
-    return buffer
-
-
-def __recv_by_size(sock, return_type="bytes"):
-    data = b''
-    data_len = int(__recv_amount(sock, MSG_LEN_LEN))
-    # code handle the case of data_len 0
-    data = __recv_amount(sock, data_len)
-    __log("Receive", data)
-    if return_type == "string":
-        return data.decode()
-    return data
-
-
-def __send_with_size(sock, data):
-    if len(data) == 0:
-        return
-    if type(data) != bytes:
-        data = data.encode()
-    len_data = str(len(data)).zfill(MSG_LEN_LEN).encode()
-    data = len_data + data
-    sock.sendall(data)
-    __log("Sent", data)
+    def __init__(self, server_listen : int = 5):
+        """
+            Create the server side socket
+            socket type: TCP
+            
+            INPUT: None
+            OUTPUT: None
+        """
+        
+        # Create TCP ipv4 socket
+        super().__init__()
+        
+        # Bind socket and set max listen
+        self.create_server_socket(self.SERVER_BIND_IP, self.SERVER_BIND_PORT, server_listen)
+    
+    
+    def recv_client(self) -> client:
+        """
+            Receives a client from server socket
+            
+            INPUT: None
+            OUTPUT: Client object
+        """
+        
+        c = client(self.server_socket_recv_client())
+        return c
